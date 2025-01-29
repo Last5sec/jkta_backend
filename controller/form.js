@@ -209,9 +209,9 @@ exports.register = async (req, res, next) => {
 
         await sendWithAttachment(
             adminEmail,
-            `New Coach Registration Intiated (${newCoach.regNo}) - Payment Pending`,
-            `Dear Admin,\n\nA new coach registration has been initiated with the following details:\n\nName: ${newCoach.playerName}\nRegistration Number: ${newCoach.regNo}\nEmail: ${newCoach.email}\nMobile: ${newCoach.mob}\nDistrict: ${newCoach.district}\n\nWe are awaiting payment confirmation for this registration. We will notify you once the payment is received.\n\nBest regards,\nJKTA Team`,
-            `<h3>Dear Admin,</h3><p>A new coach registration has been initiated with the following details:</p><ul><li><strong>Name:</strong> ${newCoach.playerName}</li><li><strong>Registration Number:</strong> ${newCoach.regNo}</li><li><strong>Email:</strong> ${newCoach.email}</li><li><strong>Mobile:</strong> ${newCoach.mob}</li><li><strong>District:</strong> ${newCoach.district}</li></ul><p>We are awaiting payment confirmation for this registration. We will notify you once the payment is received.</p><p>Best regards,<br>JKTA Team</p>`
+            `New Athelete Registration Intiated (${newCoach.regNo}) - Payment Pending`,
+            `Dear Admin,\n\nA new Athelete registration has been initiated with the following details:\n\nName: ${newCoach.playerName}\nRegistration Number: ${newCoach.regNo}\nEmail: ${newCoach.email}\nMobile: ${newCoach.mob}\nDistrict: ${newCoach.district}\n\nWe are awaiting payment confirmation for this registration. We will notify you once the payment is received.\n\nBest regards,\nJKTA Team`,
+            `<h3>Dear Admin,</h3><p>A new Athelete registration has been initiated with the following details:</p><ul><li><strong>Name:</strong> ${newCoach.playerName}</li><li><strong>Registration Number:</strong> ${newCoach.regNo}</li><li><strong>Email:</strong> ${newCoach.email}</li><li><strong>Mobile:</strong> ${newCoach.mob}</li><li><strong>District:</strong> ${newCoach.district}</li></ul><p>We are awaiting payment confirmation for this registration. We will notify you once the payment is received.</p><p>Best regards,<br>JKTA Team</p>`
         );
 
         // Send order details to the client for further processing
@@ -282,12 +282,12 @@ exports.verifyPayment = async (req, res) => {
             //     "idcards"
             // );
 
-            // Send email to the admin
+            // Send email to the admin 
             await sendWithAttachment(
                 adminEmail,
-                `New Coach Registration Completed - Tracking Number: ${userData.regNo}`,
-                `Dear Admin,\n\nA new coach registration has been successfully completed with the following details:\n\nName: ${userData.athleteName}\nRegistration Number: ${userData.regNo}\nEmail: ${userData.email}\nMobile: ${userData.mob}\nDistrict: ${userData.district}\n\nWe have received the payment for this registration. Please verify the details and update the status accordingly.\n\nBest regards,\nJKTA Team`,
-                `<h3>Dear Admin,</h3><p>A new coach registration has been successfully completed with the following details:</p><ul><li><strong>Name:</strong> ${userData.athleteName}</li><li><strong>Registration Number:</strong> ${userData.regNo}</li><li><strong>Email:</strong> ${userData.email}</li><li><strong>Mobile:</strong> ${userData.mob}</li><li><strong>District:</strong> ${userData.district}</li></ul><p>We have received the payment for this registration. Please verify the details and update the status accordingly.</p><p>Best regards,<br>JKTA Team</p>`
+                `New Athelete Registration Completed - Tracking Number: ${userData.regNo}`,
+                `Dear Admin,\n\nA new Athelete registration has been successfully completed with the following details:\n\nName: ${userData.athleteName}\nRegistration Number: ${userData.regNo}\nEmail: ${userData.email}\nMobile: ${userData.mob}\nDistrict: ${userData.district}\n\nWe have received the payment for this registration. Please verify the details and update the status accordingly.\n\nBest regards,\nJKTA Team`,
+                `<h3>Dear Admin,</h3><p>A new Athelete registration has been successfully completed with the following details:</p><ul><li><strong>Name:</strong> ${userData.athleteName}</li><li><strong>Registration Number:</strong> ${userData.regNo}</li><li><strong>Email:</strong> ${userData.email}</li><li><strong>Mobile:</strong> ${userData.mob}</li><li><strong>District:</strong> ${userData.district}</li></ul><p>We have received the payment for this registration. Please verify the details and update the status accordingly.</p><p>Best regards,<br>JKTA Team</p>`
             );
 
             // Send email to the user
