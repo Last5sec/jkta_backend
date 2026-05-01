@@ -1,22 +1,18 @@
-const Coach = require("../model/coach"); // Use the Coach model
-const axios = require("axios");
+const Coach = require("../model/coach");
 const crypto = require("crypto");
 const dotenv = require("dotenv");
 const cloudinary = require("cloudinary").v2;
 const multer = require("multer");
 const fs = require("fs");
 const Razorpay = require("razorpay");
-const path = require("path");
-const { generateCard, deleteFiles } = require("../controller/idcard");
 const { sendWithAttachment } = require("../controller/mailController");
 const expiryDate = require("../utils/expiryDate");
-const CoachEnrollment = require("../model/coachEnrollment");
-
-const adminEmail = process.env.ADMIN_EMAIL;
 
 dotenv.config();
 
-// Initialize Razorpay instance using environment variables
+const adminEmail = process.env.ADMIN_EMAIL;
+
+// Initialize Razorpay instance
 const razorpayInstance = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
     key_secret: process.env.RAZORPAY_KEY_SECRET,
@@ -29,10 +25,8 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configure Multer for file uploads
 const upload = multer({ dest: "uploads/" });
 
-// Function to handle file uploads
 const uploadFiles = (req, res) => {
     return new Promise((resolve, reject) => {
         const uploadSingle = upload.fields([
@@ -43,52 +37,26 @@ const uploadFiles = (req, res) => {
             { name: "adharFrontPhoto", maxCount: 1 },
             { name: "adharBackPhoto", maxCount: 1 },
         ]);
-
         uploadSingle(req, res, (err) => {
-            if (err) {
-                return reject(err);
-            }
+            if (err) return reject(err);
             resolve(req.files);
         });
     });
 };
 
-// Function to upload files to Cloudinary
 const uploadToCloudinary = async (filePath, folder) => {
     try {
-        const result = await cloudinary.uploader.upload(filePath, {
-            folder: folder,
-        });
-        return result.secure_url; // Return the URL of the uploaded file
+        const result = await cloudinary.uploader.upload(filePath, { folder });
+        return result.secure_url;
     } catch (error) {
         console.error("Error uploading to Cloudinary:", error);
         throw error;
     }
 };
 
-const saveFileToRoot = async (filePath, filename) => {
-    const rootDir = path.join(__dirname, "..", filename); // Save in root directory
-    const readStream = fs.createReadStream(filePath);
-    const writeStream = fs.createWriteStream(rootDir);
-
-    return new Promise((resolve, reject) => {
-        readStream.pipe(writeStream);
-
-        writeStream.on("finish", () => {
-            console.log(`File saved to root as ${filename}`);
-            resolve(rootDir);
-        });
-
-        writeStream.on("error", (error) => {
-            reject(error);
-        });
-    });
-};
-
 // Register function
 exports.register = async (req, res, next) => {
     try {
-        // Upload files using Multer
         const files = await uploadFiles(req, res);
 
         const {
@@ -107,59 +75,34 @@ exports.register = async (req, res, next) => {
             panNumber,
         } = req.body;
 
-        // Initialize URLs for file uploads
-        let photoUrl,
-            blackBeltCertUrl,
-            birthCertUrl,
-            residentCertUrl,
-            adharFrontUrl,
-            adharBackUrl;
+        let photoUrl, blackBeltCertUrl, birthCertUrl, residentCertUrl, adharFrontUrl, adharBackUrl;
         const regNo = `CH${Date.now().toString()}`;
-        // Upload photo to Cloudinary
-        if (files.photo) {
-            // const fileName = `${regNo}-download.png`;
-            // await saveFileToRoot(files.photo[0].path, fileName);
 
+        if (files.photo) {
             photoUrl = await uploadToCloudinary(files.photo[0].path, "uploads");
-            fs.unlinkSync(files.photo[0].path); // Remove file after upload
+            fs.unlinkSync(files.photo[0].path);
         }
         if (files.blackBeltCertificate) {
-            blackBeltCertUrl = await uploadToCloudinary(
-                files.blackBeltCertificate[0].path,
-                "uploads"
-            );
+            blackBeltCertUrl = await uploadToCloudinary(files.blackBeltCertificate[0].path, "uploads");
             fs.unlinkSync(files.blackBeltCertificate[0].path);
         }
         if (files.birthCertificate) {
-            birthCertUrl = await uploadToCloudinary(
-                files.birthCertificate[0].path,
-                "uploads"
-            );
+            birthCertUrl = await uploadToCloudinary(files.birthCertificate[0].path, "uploads");
             fs.unlinkSync(files.birthCertificate[0].path);
         }
         if (files.residentCertificate) {
-            residentCertUrl = await uploadToCloudinary(
-                files.residentCertificate[0].path,
-                "uploads"
-            );
+            residentCertUrl = await uploadToCloudinary(files.residentCertificate[0].path, "uploads");
             fs.unlinkSync(files.residentCertificate[0].path);
         }
         if (files.adharFrontPhoto) {
-            adharFrontUrl = await uploadToCloudinary(
-                files.adharFrontPhoto[0].path,
-                "uploads"
-            );
+            adharFrontUrl = await uploadToCloudinary(files.adharFrontPhoto[0].path, "uploads");
             fs.unlinkSync(files.adharFrontPhoto[0].path);
         }
         if (files.adharBackPhoto) {
-            adharBackUrl = await uploadToCloudinary(
-                files.adharBackPhoto[0].path,
-                "uploads"
-            );
+            adharBackUrl = await uploadToCloudinary(files.adharBackPhoto[0].path, "uploads");
             fs.unlinkSync(files.adharBackPhoto[0].path);
         }
 
-        // Create a new coach in the database with the new fields
         const newCoach = await Coach.create({
             regNo,
             playerName,
@@ -183,26 +126,32 @@ exports.register = async (req, res, next) => {
             adharBackPhoto: adharBackUrl,
         });
 
-        // Prepare Razorpay order options
+        // Amount: 500 INR = 50000 paise
         const orderOptions = {
             amount: email === "info@jkta.in" ? 100 : 50000,
             currency: "INR",
-            receipt: `order_rcptid_${newCoach._id}`,
-            payment_capture: 1, // Auto capture payment
+            receipt: `rcpt_${newCoach._id}`,
+            payment_capture: 1,
         };
 
-        // Create Razorpay order
-        const order = await razorpayInstance.orders.create(orderOptions);
+        let order;
+        try {
+            order = await razorpayInstance.orders.create(orderOptions);
+        } catch (razorpayError) {
+            console.error("Razorpay order creation failed:", razorpayError);
+            return res.status(500).json({
+                error: "Payment gateway error. Please try again.",
+            });
+        }
 
-        // Send email to admin with the new coach details
-        await sendWithAttachment(
+        // Notify admin - fire and forget
+        sendWithAttachment(
             adminEmail,
-            `New Coach Registration Intiated (${newCoach.regNo}) - Payment Pending`,
-            `Dear Admin,\n\nA new coach registration has been initiated with the following details:\n\nName: ${newCoach.playerName}\nRegistration Number: ${newCoach.regNo}\nEmail: ${newCoach.email}\nMobile: ${newCoach.mob}\nDistrict: ${newCoach.district}\n\nWe are awaiting payment confirmation for this registration. We will notify you once the payment is received.\n\nBest regards,\nJKTA Team`,
-            `<h3>Dear Admin,</h3><p>A new coach registration has been initiated with the following details:</p><ul><li><strong>Name:</strong> ${newCoach.playerName}</li><li><strong>Registration Number:</strong> ${newCoach.regNo}</li><li><strong>Email:</strong> ${newCoach.email}</li><li><strong>Mobile:</strong> ${newCoach.mob}</li><li><strong>District:</strong> ${newCoach.district}</li></ul><p>We are awaiting payment confirmation for this registration. We will notify you once the payment is received.</p><p>Best regards,<br>JKTA Team</p>`
+            `New Coach Registration Initiated (${newCoach.regNo}) - Payment Pending`,
+            `Dear Admin,\n\nA new coach registration has been initiated.\n\nName: ${newCoach.playerName}\nReg No: ${newCoach.regNo}\nEmail: ${newCoach.email}\nMobile: ${newCoach.mob}\nDistrict: ${newCoach.district}\n\nPayment is pending.\n\nBest regards,\nJKTA Team`,
+            `<h3>Dear Admin,</h3><p>New coach registration initiated:</p><ul><li><strong>Name:</strong> ${newCoach.playerName}</li><li><strong>Reg No:</strong> ${newCoach.regNo}</li><li><strong>Email:</strong> ${newCoach.email}</li><li><strong>Mobile:</strong> ${newCoach.mob}</li><li><strong>District:</strong> ${newCoach.district}</li></ul><p>Payment pending.</p><p>Best regards,<br>JKTA Team</p>`
         );
 
-        // Send order details to the client for further processing
         res.status(200).json({
             success: true,
             orderId: order.id,
@@ -211,7 +160,7 @@ exports.register = async (req, res, next) => {
             userId: newCoach._id,
         });
     } catch (error) {
-        console.error("Error in register function:", error);
+        console.error("Error in coach register:", error);
         res.status(500).json({
             error: "An error occurred while registering the coach.",
         });
@@ -227,86 +176,76 @@ exports.verifyPayment = async (req, res) => {
             userId,
         } = req.body;
 
-        // Generate the expected signature
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !userId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing payment verification fields.",
+            });
+        }
+
         const generatedSignature = crypto
-            .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET) // Use Razorpay key_secret
-            .update(razorpay_order_id + "|" + razorpay_payment_id) // Concatenate order_id and payment_id
+            .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+            .update(razorpay_order_id + "|" + razorpay_payment_id)
             .digest("hex");
 
-        // Compare the generated signature with the signature received from Razorpay
-        if (generatedSignature === razorpay_signature) {
-            // Payment verified successfully
+        const signatureMatch =
+            generatedSignature.length === razorpay_signature.length &&
+            crypto.timingSafeEqual(
+                Buffer.from(generatedSignature),
+                Buffer.from(razorpay_signature)
+            );
 
+        if (signatureMatch) {
             const userData = await Coach.findById(userId);
+
+            if (!userData) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Coach record not found.",
+                });
+            }
 
             await Coach.findByIdAndUpdate(userData._id, {
                 payment: true,
                 status: "pending",
             });
 
-            // const coachEnrollmentCount = await CoachEnrollment.countDocuments(); // as it returns a promise
-            // const coachEnrollmentDetails = await CoachEnrollment.create({
-            //     enrollmentNumber: `JKTA${10000 + coachEnrollmentCount + 1}`,
-            //     regNo: userData._id,
-            // });
-
-            // await generateCard({
-            //     id: userData.regNo,
-            //     enrollmentNo: coachEnrollmentDetails.enrollmentNumber,
-            //     type: "C",
-            //     name: userData.playerName,
-            //     parentage: userData.fatherName,
-            //     gender: userData.gender,
-            //     valid: expiryDate(userData.createdAt),
-            //     district: userData.district,
-            //     dob: `${userData.dob}`,
-            // });
-
-            // Send email to the admin with payment confirmation
-            await sendWithAttachment(
+            // Notify admin - fire and forget
+            sendWithAttachment(
                 adminEmail,
-                `Payment Confirmation - Coach Registration (${userData.regNo})`,
-                `Dear Admin,\n\nThe payment for coach registration (${userData.regNo}) has been successfully received. Below are the details of the transaction:\n\nRegistration Number: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nThe coach details will be verified shortly. If you have any questions or need further assistance, please do not hesitate to contact us.\n\nBest regards,\nJKTA Team`,
-                `<h3>Dear Admin,</h3><p>The payment for coach registration (${userData.regNo}) has been successfully received. Below are the details of the transaction:</p><ul><li><strong>Registration Number:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>The coach details will be verified shortly. If you have any questions or need further assistance, please do not hesitate to contact us.</p><p>Best regards,<br>JKTA Team</p>`
+                `Coach Registration Completed - Tracking: ${userData.regNo}`,
+                `Dear Admin,\n\nCoach registration payment received.\n\nName: ${userData.playerName}\nReg No: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nPlease verify and approve.\n\nBest regards,\nJKTA Team`,
+                `<h3>Dear Admin,</h3><p>Coach registration payment received:</p><ul><li><strong>Name:</strong> ${userData.playerName}</li><li><strong>Reg No:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>Please verify and approve.</p><p>Best regards,<br>JKTA Team</p>`
             );
 
-            // Send email to the user with payment confirmation
-            await sendWithAttachment(
+            // Confirm to user - fire and forget
+            sendWithAttachment(
                 userData.email,
-                `Payment Confirmation - Tracking Number: ${userData.regNo}`,
-                `Dear ${userData.playerName},\n\nWe are pleased to inform you that your payment has been successfully received. Below are the details of your transaction:\n\nTracking Number: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nOur team will verify your details shortly. If you have any questions or need further assistance, please do not hesitate to contact us.\n\nThank you for your trust in JKTA.\n\nBest regards,\nJKTA Team`,
-                `<h3>Dear ${userData.playerName},</h3><p>We are pleased to inform you that your payment has been successfully received. Below are the details of your transaction:</p><ul><li><strong>Tracking Number:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>Our team will verify your details shortly. If you have any questions or need further assistance, please do not hesitate to contact us.</p><p>Thank you for your trust in JKTA.</p><p>Best regards,<br>JKTA Team</p>`
+                `Payment Confirmed - Tracking Number: ${userData.regNo}`,
+                `Dear ${userData.playerName},\n\nYour payment has been received.\n\nTracking Number: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nOur team will verify your details shortly.\n\nBest regards,\nJKTA Team`,
+                `<h3>Dear ${userData.playerName},</h3><p>Your payment has been successfully received.</p><ul><li><strong>Tracking Number:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>Our team will verify your details shortly.</p><p>Thank you for your trust in JKTA.</p><p>Best regards,<br>JKTA Team</p>`
             );
-
-            // // upload pdf to cloudinary from root
-            // const pdfUrl = await uploadToCloudinary(
-            //     `./${userData.regNo}-identity-card.pdf`,
-            //     "idcards"
-            // );
-
-            // await deleteFiles(userData.regNo);
 
             res.status(201).json({
-                message: "Payment Done. Admin will verify your details soon.",
+                message: "Payment successful. Admin will verify your details.",
                 success: true,
                 paymentId: razorpay_payment_id,
                 email: userData.email,
                 regNo: userData.regNo,
                 name: userData.playerName,
-                // pdfUrl,
             });
         } else {
-            // Payment verification failed
+            console.warn("Payment signature mismatch for coach userId:", userId);
             res.status(400).json({
                 success: false,
-                message: "Payment verification failed",
+                message: "Payment verification failed. Please contact support.",
             });
         }
     } catch (error) {
-        console.error("Error in verifying payment:", error);
+        console.error("Error in coach verifyPayment:", error);
         res.status(500).json({
             success: false,
-            message: "Internal server error",
+            message: "Internal server error during payment verification.",
         });
     }
 };
