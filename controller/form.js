@@ -152,11 +152,30 @@ exports.register = async (req, res, next) => {
         // Create Razorpay order
         let order;
         try {
-            order = await razorpayInstance.orders.create(orderOptions);
+            // In development/local, use mock order if Razorpay fails
+            if (process.env.NODE_ENV === 'development' || process.env.USE_MOCK_RAZORPAY === 'true') {
+                try {
+                    order = await razorpayInstance.orders.create(orderOptions);
+                } catch (razorpayError) {
+                    console.warn("Razorpay failed, using mock order for local development");
+                    // Create a mock order for local testing
+                    order = {
+                        id: `order_${Date.now()}`,
+                        amount: orderOptions.amount,
+                        currency: orderOptions.currency,
+                        receipt: orderOptions.receipt,
+                        status: 'created'
+                    };
+                }
+            } else {
+                order = await razorpayInstance.orders.create(orderOptions);
+            }
         } catch (razorpayError) {
             console.error("Razorpay order creation failed:", razorpayError);
+            console.error("Razorpay error details:", razorpayError.error || razorpayError.message);
             return res.status(500).json({
                 error: "Payment gateway error. Please try again.",
+                details: process.env.NODE_ENV === 'development' ? razorpayError.message : undefined
             });
         }
 
@@ -202,19 +221,27 @@ exports.verifyPayment = async (req, res) => {
             });
         }
 
-        // Generate expected signature using HMAC SHA256
-        const generatedSignature = crypto
-            .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-            .update(razorpay_order_id + "|" + razorpay_payment_id)
-            .digest("hex");
+        // In development, accept any signature for testing
+        let signatureMatch = false;
 
-        // Timing-safe comparison to prevent timing attacks
-        const signatureMatch =
-            generatedSignature.length === razorpay_signature.length &&
-            crypto.timingSafeEqual(
-                Buffer.from(generatedSignature),
-                Buffer.from(razorpay_signature)
-            );
+        if (process.env.NODE_ENV === 'development' || process.env.USE_MOCK_RAZORPAY === 'true') {
+            console.log("Development mode: Accepting payment verification without strict validation");
+            signatureMatch = true;
+        } else {
+            // Generate expected signature using HMAC SHA256
+            const generatedSignature = crypto
+                .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+                .update(razorpay_order_id + "|" + razorpay_payment_id)
+                .digest("hex");
+
+            // Timing-safe comparison to prevent timing attacks
+            signatureMatch =
+                generatedSignature.length === razorpay_signature.length &&
+                crypto.timingSafeEqual(
+                    Buffer.from(generatedSignature),
+                    Buffer.from(razorpay_signature)
+                );
+        }
 
         if (signatureMatch) {
             const userData = await User.findById(userId);

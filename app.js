@@ -7,6 +7,8 @@ require("dotenv").config();
 
 const allowedOrigins = [
     "https://client-work-august.vercel.app",
+    "https://jkta.in",
+    "https://www.jkta.in",
     "http://localhost:5173",
     "http://localhost:3000",
 ];
@@ -18,6 +20,9 @@ app.use(cors({
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
+
+        // Log rejected origins for debugging
+        console.warn(`CORS rejected origin: ${origin}`);
         return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,

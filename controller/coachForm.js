@@ -139,8 +139,10 @@ exports.register = async (req, res, next) => {
             order = await razorpayInstance.orders.create(orderOptions);
         } catch (razorpayError) {
             console.error("Razorpay order creation failed:", razorpayError);
+            console.error("Razorpay error details:", razorpayError.error || razorpayError.message);
             return res.status(500).json({
                 error: "Payment gateway error. Please try again.",
+                details: process.env.NODE_ENV === 'development' ? razorpayError.message : undefined
             });
         }
 
