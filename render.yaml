@@ -26,8 +26,8 @@ services:
         value: production
       - key: USE_MOCK_RAZORPAY
         value: "false"
-      - key: PORT
-        value: "3000"
+      # NOTE: Do NOT set PORT. Render injects its own PORT (e.g. 10000)
+      # and proxies to it. app.js already does process.env.PORT || 3000.
       # ---- Fill these in via the Render dashboard after creation ----
       - key: DB_URL
         sync: false
