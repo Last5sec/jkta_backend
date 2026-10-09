@@ -77,6 +77,38 @@ const makeAvatar = (id) => {
     });
 };
 
+/**
+ * Create a neutral placeholder photo (initials on a grey background) for
+ * registrations that paid without a profile picture. Written to the same
+ * `${name}` location the card generator reads its source photo from, so the
+ * normal card pipeline works unchanged.
+ */
+const createPlaceholderPhoto = async (name, label) => {
+    const safeName = path
+        .basename(String(name))
+        .replace(/[^a-zA-Z0-9._-]/g, "_");
+    const outputPath = path.resolve(__dirname, "..", safeName);
+
+    const initials =
+        String(label || "")
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((word) => word[0])
+            .join("") || "JKTA";
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300">
+        <rect width="300" height="300" fill="#e5e7eb"/>
+        <text x="150" y="155" font-family="Helvetica, Arial, sans-serif"
+            font-size="110" font-weight="bold" fill="#6b7280"
+            text-anchor="middle" dominant-baseline="middle">${initials.toUpperCase()}</text>
+    </svg>`;
+
+    await sharp(Buffer.from(svg)).png().toFile(outputPath);
+    return outputPath;
+};
+
 const generateCard = async ({
     id,
     enrollmentNo,
@@ -184,4 +216,9 @@ const deleteFiles = async (id) => {
     );
 };
 
-module.exports = { generateCard, deleteFiles, makeAvatar };
+module.exports = {
+    generateCard,
+    deleteFiles,
+    makeAvatar,
+    createPlaceholderPhoto,
+};

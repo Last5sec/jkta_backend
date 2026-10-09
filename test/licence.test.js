@@ -68,6 +68,7 @@ const makeDeps = ({
             state.deleted += 1;
         },
         downloadImage: async () => "/tmp/photo.png",
+        createPlaceholderPhoto: async () => "/tmp/placeholder.png",
         sendWithAttachment: async (...args) => {
             state.sentCalls.push(args);
             return sendResult || { sent: true, messageId: "msg-1", error: null };
@@ -178,6 +179,32 @@ test("missing/invalid registered email is recorded without attempting to send", 
     assert.equal(res.status, "failed");
     assert.match(res.error, /email address/i);
     assert.equal(state.sentCalls.length, 0);
+});
+
+test("a paid registration without a profile photo still gets a card via a placeholder", async () => {
+    const { deps, state } = makeDeps({ record: baseRecord({ photo: undefined }) });
+
+    const res = await deliverLicence(state.record, "A", { deps });
+
+    assert.equal(res.sent, true);
+    assert.equal(res.status, "sent");
+    assert.equal(state.sentCalls.length, 1, "the card is still emailed");
+    assert.equal(state.saved.at(-1).patch.licenceEmailStatus, "sent");
+});
+
+test("createPlaceholderPhoto produces a real PNG that the card pipeline can read", async () => {
+    const id = `PLACEHOLDERTEST${Date.now()}`;
+    const outputPath = await idcard.createPlaceholderPhoto(
+        `${id}-download.png`,
+        "Asha Kumar"
+    );
+
+    try {
+        const buf = fs.readFileSync(outputPath);
+        assert.ok(buf.length > 100, `expected a real PNG, got ${buf.length} bytes`);
+    } finally {
+        await idcard.deleteFiles(id);
+    }
 });
 
 test("a concurrent delivery is skipped while the record is locked", async () => {

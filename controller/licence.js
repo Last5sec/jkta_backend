@@ -4,7 +4,11 @@ const User = require("../model/user");
 const Coach = require("../model/coach");
 const AtheleteEnrollment = require("../model/athleteEnrollment");
 const CoachEnrollment = require("../model/coachEnrollment");
-const { generateCard, deleteFiles } = require("./idcard");
+const {
+    generateCard,
+    deleteFiles,
+    createPlaceholderPhoto,
+} = require("./idcard");
 const { sendWithAttachment } = require("./mailController");
 const { downloadImage } = require("../utils/downloadImage");
 const expiryDate = require("../utils/expiryDate");
@@ -45,6 +49,7 @@ const buildDeps = (type) => {
         enrollmentModel: cfg.enrollmentModel,
         generateCard,
         deleteFiles,
+        createPlaceholderPhoto,
         sendWithAttachment,
         downloadImage,
         now: () => new Date(),
@@ -112,18 +117,24 @@ const assignEnrollmentNumber = async (record, cfg, deps) => {
 };
 
 const buildCard = async (record, cfg, enrollmentNumber, deps) => {
-    if (!record.photo) {
-        throw new Error("Profile photo is missing; cannot generate licence card");
-    }
     if (!cfg.cardType) {
         // Guards against a blank card template path (doc.image("") => ENOENT).
         throw new Error("Card type is not configured for this licence");
     }
 
-    await deps.downloadImage(
-        record.photo,
-        `${record.regNo}-download.png`
-    );
+    // A paid registration without a profile photo still gets a card, using a
+    // neutral initials placeholder, so the player is never left without one.
+    if (record.photo) {
+        await deps.downloadImage(
+            record.photo,
+            `${record.regNo}-download.png`
+        );
+    } else {
+        await deps.createPlaceholderPhoto(
+            `${record.regNo}-download.png`,
+            record[cfg.nameField]
+        );
+    }
 
     return deps.generateCard({
         id: record.regNo,

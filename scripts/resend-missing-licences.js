@@ -60,8 +60,8 @@ const TYPES = [
         }
     }
 
-    // Photo-ready registrations first so a --limit batch never wastes a slot on
-    // a record that cannot produce a card yet.
+    // Photo-ready registrations first, so a --limit batch prefers records whose
+    // real photo is available.
     targets.sort((a, b) => Number(b.hasPhoto) - Number(a.hasPhoto));
 
     const selected = limit > 0 ? targets.slice(0, limit) : targets;
@@ -88,14 +88,9 @@ const TYPES = [
 
     let sent = 0;
     let failed = 0;
-    let skippedNoPhoto = 0;
     for (const target of selected) {
-        if (!target.hasPhoto) {
-            skippedNoPhoto += 1;
-            console.log(`skipped (no photo): ${target.regNo}`);
-            continue;
-        }
-
+        // A missing photo no longer blocks delivery: the card is generated with
+        // a neutral initials placeholder so the paid player still receives it.
         const outcome = await resendLicence(target.regNo, target.type);
         if (outcome.ok && outcome.result && outcome.result.sent) {
             sent += 1;
@@ -112,9 +107,7 @@ const TYPES = [
         await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
-    console.log(
-        `\nDone. sent=${sent} failed=${failed} skipped(no photo)=${skippedNoPhoto}`
-    );
+    console.log(`\nDone. sent=${sent} failed=${failed}`);
     await mongoose.disconnect();
 })().catch(async (error) => {
     console.error("Recovery script error:", error && error.message);
