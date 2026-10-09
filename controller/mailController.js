@@ -115,4 +115,42 @@ const sendWithAttachment = async (to, subject, text, html, filename, filePath) =
     }
 };
 
-module.exports = { sendMail, sendWithAttachment, resolveSmtpConfig };
+/**
+ * Startup self-check for the mail configuration.
+ *
+ * Logs the resolved (non-secret) SMTP settings and performs a connection/auth
+ * check, so production logs immediately show whether outgoing email can work.
+ * Never throws and never sends a message.
+ */
+const logSmtpStartupCheck = async () => {
+    const cfg = resolveSmtpConfig();
+    console.log(
+        `SMTP config: host=${cfg.host || "(unset)"} port=${cfg.port} secure=${
+            cfg.secure
+        } from=${senderAddress() || "(unset)"}`
+    );
+
+    if (!cfg.host || !cfg.auth.user || !cfg.auth.pass) {
+        console.error(
+            "SMTP is not fully configured (SMTP_HOST/SMTP_EMAIL/SMTP_PASSWORD); outgoing email will fail."
+        );
+        return;
+    }
+
+    try {
+        await getTransporter().verify();
+        console.log("SMTP connection/auth verified - outgoing email is working.");
+    } catch (error) {
+        console.error(
+            "SMTP self-check FAILED - outgoing email will fail:",
+            sanitizeError(error)
+        );
+    }
+};
+
+module.exports = {
+    sendMail,
+    sendWithAttachment,
+    resolveSmtpConfig,
+    logSmtpStartupCheck,
+};

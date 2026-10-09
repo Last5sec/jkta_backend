@@ -33,6 +33,11 @@ app.use(bodyParser.json({ extended: false }));
 const User = require("./routes/user");
 app.use(User);
 
+// Log the resolved mail settings and verify the SMTP connection on boot.
+// This makes email misconfiguration visible in production logs.
+const { logSmtpStartupCheck } = require("./controller/mailController");
+logSmtpStartupCheck();
+
 Mongoose.connect(process.env.DB_URL)
     .then(() => {
         app.listen(process.env.PORT || 3000);
