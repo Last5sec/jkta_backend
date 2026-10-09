@@ -7,6 +7,11 @@ const fs = require("fs");
 const Razorpay = require("razorpay");
 const path = require("path");
 const { sendWithAttachment } = require("../controller/mailController");
+const {
+    deliverLicence,
+    resendLicence,
+    secretMatches,
+} = require("./licence");
 const expiryDate = require("../utils/expiryDate");
 
 dotenv.config();
@@ -259,29 +264,48 @@ exports.verifyPayment = async (req, res) => {
                 status: "pending",
             });
 
-            // Send confirmation email to admin - fire and forget
-            sendWithAttachment(
-                adminEmail,
-                `Athlete Registration Completed - Tracking: ${userData.regNo}`,
-                `Dear Admin,\n\nAthlete registration completed.\n\nName: ${userData.athleteName}\nReg No: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nPlease verify and approve.\n\nBest regards,\nJKTA Team`,
-                `<h3>Dear Admin,</h3><p>Athlete registration payment received:</p><ul><li><strong>Name:</strong> ${userData.athleteName}</li><li><strong>Reg No:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>Please verify and approve.</p><p>Best regards,<br>JKTA Team</p>`
-            );
+            // Notify admin once per payment (idempotent on repeated callbacks)
+            if (!userData.adminPaymentNotifiedAt) {
+                await User.findByIdAndUpdate(userData._id, {
+                    $set: { adminPaymentNotifiedAt: new Date() },
+                });
+                sendWithAttachment(
+                    adminEmail,
+                    `Athlete Registration Completed - Tracking: ${userData.regNo}`,
+                    `Dear Admin,\n\nAthlete registration completed.\n\nName: ${userData.athleteName}\nReg No: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nPlease verify and approve.\n\nBest regards,\nJKTA Team`,
+                    `<h3>Dear Admin,</h3><p>Athlete registration payment received:</p><ul><li><strong>Name:</strong> ${userData.athleteName}</li><li><strong>Reg No:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>Please verify and approve.</p><p>Best regards,<br>JKTA Team</p>`
+                );
+            }
 
-            // Send confirmation email to user - fire and forget
-            sendWithAttachment(
-                userData.email,
-                `Payment Confirmed - Tracking Number: ${userData.regNo}`,
-                `Dear ${userData.athleteName},\n\nYour payment has been received.\n\nTracking Number: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nWe will verify your details shortly.\n\nBest regards,\nJKTA Team`,
-                `<h3>Dear ${userData.athleteName},</h3><p>Your payment has been successfully received.</p><ul><li><strong>Tracking Number:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>Our team will verify your details shortly.</p><p>Thank you for your trust in JKTA.</p><p>Best regards,<br>JKTA Team</p>`
-            );
+            // Confirm to the player once per payment (idempotent)
+            if (!userData.paymentEmailSentAt) {
+                await User.findByIdAndUpdate(userData._id, {
+                    $set: { paymentEmailSentAt: new Date() },
+                });
+                sendWithAttachment(
+                    userData.email,
+                    `Payment Confirmed - Tracking Number: ${userData.regNo}`,
+                    `Dear ${userData.athleteName},\n\nYour payment has been received.\n\nTracking Number: ${userData.regNo}\nPayment ID: ${razorpay_payment_id}\n\nYour licence card will follow in a separate email.\n\nBest regards,\nJKTA Team`,
+                    `<h3>Dear ${userData.athleteName},</h3><p>Your payment has been successfully received.</p><ul><li><strong>Tracking Number:</strong> ${userData.regNo}</li><li><strong>Payment ID:</strong> ${razorpay_payment_id}</li></ul><p>Your licence card will follow in a separate email.</p><p>Thank you for your trust in JKTA.</p><p>Best regards,<br>JKTA Team</p>`
+                );
+            }
+
+            // Payment is verified server-side: automatically generate and
+            // email the licence card. Idempotent, so repeated callbacks never
+            // send a second card or issue a second enrolment number.
+            const licence = await deliverLicence(userData, "A");
 
             res.status(201).json({
-                message: "Payment successful. Admin will verify your details.",
                 success: true,
+                message: licence.sent
+                    ? "Payment successful. Your JKTA Athlete Licence card has been emailed to you."
+                    : "Payment successful. Your registration is confirmed, but your licence card could not be emailed yet. It will be retried and our team has been notified.",
                 paymentId: razorpay_payment_id,
                 email: userData.email,
                 regNo: userData.regNo,
                 name: userData.athleteName,
+                licenceEmailSent: licence.sent,
+                licenceEmailStatus: licence.status,
             });
         } else {
             console.warn("Payment signature mismatch for userId:", userId);
@@ -296,5 +320,52 @@ exports.verifyPayment = async (req, res) => {
             success: false,
             message: "Internal server error during payment verification.",
         });
+    }
+};
+
+// Protected admin-only endpoint to safely re-send a licence card to an
+// existing, already-paid registration. Never creates a new registration,
+// enrolment number, or charge.
+exports.resendLicence = async (req, res) => {
+    try {
+        if (!process.env.LICENCE_RESEND_SECRET) {
+            return res.status(503).json({
+                success: false,
+                message: "Licence resend is not configured on the server.",
+            });
+        }
+
+        if (
+            !secretMatches(
+                req.headers["x-resend-secret"],
+                process.env.LICENCE_RESEND_SECRET
+            )
+        ) {
+            return res.status(401).json({ success: false, message: "Unauthorized." });
+        }
+
+        const { regNo } = req.body || {};
+        if (!regNo) {
+            return res.status(400).json({ success: false, message: "regNo is required." });
+        }
+
+        const outcome = await resendLicence(regNo, "A");
+        if (!outcome.ok) {
+            return res.status(outcome.httpStatus).json({
+                success: false,
+                message: outcome.error,
+            });
+        }
+
+        return res.status(outcome.httpStatus).json({
+            success: outcome.result.sent,
+            message: outcome.result.sent
+                ? "Licence card re-sent successfully."
+                : "Licence card could not be sent; the failure was recorded and can be retried.",
+            licenceEmailStatus: outcome.result.status,
+        });
+    } catch (error) {
+        console.error("Error in resendLicence:", error.message);
+        res.status(500).json({ success: false, message: "Internal server error." });
     }
 };

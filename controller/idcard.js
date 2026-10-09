@@ -99,7 +99,6 @@ const generateCard = async ({
 
     // Stream the PDF to a file
     const outputPath = path.resolve(__dirname, `../${id}-identity-card.pdf`);
-    doc.pipe(fs.createWriteStream(outputPath));
 
     // Paths for background and avatar images
     let frontImagePath = "";
@@ -114,49 +113,75 @@ const generateCard = async ({
 
     const avatarImagePath = path.resolve(__dirname, `../${id}-avatar.png`);
 
-    // Add background image
-    doc.image(frontImagePath, 0, 0, { width: 1011 });
+    // IMPORTANT: wait for the write stream to fully flush before resolving.
+    // `await doc.end()` alone resolves before the file is written to disk,
+    // which previously produced a 0-byte / truncated PDF attachment.
+    await new Promise((resolve, reject) => {
+        const writeStream = fs.createWriteStream(outputPath);
+        writeStream.on("finish", () => {
+            console.log("PDF created successfully");
+            resolve();
+        });
+        writeStream.on("error", reject);
 
-    // Add text fields
-    doc.fontSize(22)
-        .font("Helvetica-Bold")
-        .fillColor("red")
-        .text(enrollmentNo.toUpperCase(), 243, 136);
+        doc.pipe(writeStream);
 
-    doc.fontSize(30)
-        .font("Times-Bold")
-        .fillColor("black")
-        .text(name.toUpperCase(), 420, 178);
+        // Add background image
+        doc.image(frontImagePath, 0, 0, { width: 1011 });
 
-    doc.fontSize(24)
-        .font("Helvetica-Bold")
-        .fillColor("black")
-        .text(parentage.toUpperCase(), 580, 302)
-        .text(gender.toUpperCase(), 580, 365)
-        .text(formatDate(dob), 580, 407)
-        .text(district.toUpperCase(), 580, 449)
-        .text(valid.toUpperCase(), 580, 491);
+        // Add text fields
+        doc.fontSize(22)
+            .font("Helvetica-Bold")
+            .fillColor("red")
+            .text(String(enrollmentNo).toUpperCase(), 243, 136);
 
-    // Add the avatar image
-    doc.image(avatarImagePath, 112, 218, { width: 220 });
+        doc.fontSize(30)
+            .font("Times-Bold")
+            .fillColor("black")
+            .text(String(name).toUpperCase(), 420, 178);
 
-    // Add a new page for the back side
-    doc.addPage();
+        doc.fontSize(24)
+            .font("Helvetica-Bold")
+            .fillColor("black")
+            .text(String(parentage).toUpperCase(), 580, 302)
+            .text(String(gender).toUpperCase(), 580, 365)
+            .text(formatDate(dob), 580, 407)
+            .text(String(district).toUpperCase(), 580, 449)
+            .text(String(valid).toUpperCase(), 580, 491);
 
-    // Add the back image
-    doc.image(backImagePath, 0, 0, { width: 1011 });
+        // Add the avatar image
+        doc.image(avatarImagePath, 112, 218, { width: 220 });
 
-    // Finalize the PDF file after all content is added
-    await doc.end();
-    console.log("PDF created successfully");
+        // Add a new page for the back side
+        doc.addPage();
+
+        // Add the back image
+        doc.image(backImagePath, 0, 0, { width: 1011 });
+
+        // Finalize the PDF file after all content is added
+        doc.end();
+    });
+
+    return outputPath;
 };
 
-// delete files
+// Best-effort cleanup of per-registration temporary files.
+// Missing files are ignored so cleanup never masks the real result.
 const deleteFiles = async (id) => {
-    await fs.unlinkSync(path.resolve(__dirname, `../${id}-download.png`));
-    await fs.unlinkSync(path.resolve(__dirname, `../${id}-photo.png`));
-    await fs.unlinkSync(path.resolve(__dirname, `../${id}-avatar.png`));
-    await fs.unlinkSync(path.resolve(__dirname, `../${id}-identity-card.pdf`));
+    const files = [
+        `${id}-download.png`,
+        `${id}-photo.png`,
+        `${id}-avatar.png`,
+        `${id}-identity-card.pdf`,
+    ];
+
+    await Promise.all(
+        files.map((file) =>
+            fs.promises
+                .unlink(path.resolve(__dirname, `../${file}`))
+                .catch(() => {})
+        )
+    );
 };
 
-module.exports = { generateCard, deleteFiles };
+module.exports = { generateCard, deleteFiles, makeAvatar };

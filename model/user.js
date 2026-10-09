@@ -32,6 +32,25 @@ const userSchema = new Schema(
             type: Boolean,
             default: false,
         },
+        // ---- Licence card delivery tracking ----
+        enrollmentNumber: String,
+        licenceEmailStatus: {
+            type: String,
+            enum: ["pending", "sent", "failed"],
+        },
+        licenceEmailMessageId: String,
+        licenceEmailError: String,
+        licenceEmailAttempts: {
+            type: Number,
+            default: 0,
+        },
+        licenceEmailLastAttemptAt: Date,
+        licenceIssuedAt: Date,
+        // Short-lived lock preventing concurrent duplicate deliveries.
+        licenceProcessingAt: Date,
+        // Guards so repeated payment callbacks do not re-send confirmations.
+        paymentEmailSentAt: Date,
+        adminPaymentNotifiedAt: Date,
     },
     {
         timestamps: true,
