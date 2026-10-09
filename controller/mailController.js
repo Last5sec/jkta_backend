@@ -122,13 +122,41 @@ const sendWithAttachment = async (to, subject, text, html, filename, filePath) =
  * check, so production logs immediately show whether outgoing email can work.
  * Never throws and never sends a message.
  */
+// Public mailbox domains that must never be used as a From address when
+// sending through a third-party relay: the recipient's DMARC check cannot
+// align, so messages are usually marked as spam even though the relay accepts
+// them. Send from an address on a domain you authenticate instead.
+const PUBLIC_MAILBOX_DOMAINS = [
+    "gmail.com",
+    "googlemail.com",
+    "yahoo.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "aol.com",
+    "icloud.com",
+    "protonmail.com",
+    "proton.me",
+];
+
 const logSmtpStartupCheck = async () => {
     const cfg = resolveSmtpConfig();
+    const from = senderAddress();
     console.log(
         `SMTP config: host=${cfg.host || "(unset)"} port=${cfg.port} secure=${
             cfg.secure
-        } from=${senderAddress() || "(unset)"}`
+        } from=${from || "(unset)"}`
     );
+
+    const fromDomain = (String(from || "").split("@")[1] || "").toLowerCase();
+    if (PUBLIC_MAILBOX_DOMAINS.includes(fromDomain)) {
+        console.warn(
+            `SMTP warning: From is a public mailbox (${fromDomain}). Relaying via ` +
+                `${cfg.host || "this relay"} cannot pass DMARC alignment, so mail ` +
+                `will likely be filtered as spam. Send from an authenticated address ` +
+                `on your own domain (e.g. no-reply@jkta.in).`
+        );
+    }
 
     if (!cfg.host || !cfg.auth.user || !cfg.auth.pass) {
         console.error(
